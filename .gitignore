@@ -1,0 +1,69 @@
+# ==============================
+# GLOBAL
+# ==============================
+
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
+
+# ==============================
+# PYTHON / BACKEND
+# ==============================
+
+# Virtual Environment
+venv/
+.env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# FastAPI / Flask specific
+instance/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.sqlite3
+
+# ==============================
+# NODE / FRONTEND (REACT)
+# ==============================
+
+frontend/node_modules/
+node_modules/
+
+# Build results
+frontend/dist/
+frontend/build/
+
+# Cache
+frontend/.vite/
+frontend/.cache/
+frontend/.parcel-cache/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==============================
+# IDE / EDITOR
+# ==============================
+
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ==============================
+# OS GENERATED
+# ==============================
+
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
