@@ -33,6 +33,3 @@ Aplikasi web untuk membantu pengelolaan usaha tempe, meliputi pencatatan penjual
 - React Router
 
 ---
-
-## 📁 Struktur Proyek
-
