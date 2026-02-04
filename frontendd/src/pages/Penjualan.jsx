@@ -351,9 +351,9 @@ export default function Penjualan() {
                   <TableHead>Tanggal</TableHead>
                   <TableHead>Pembeli</TableHead>
                   <TableHead>Kategori</TableHead>
-                  <TableHead className="text-right">Kecil</TableHead>
-                  <TableHead className="text-right">Sedang</TableHead>
-                  <TableHead className="text-right">Besar</TableHead>
+                  <TableHead className="text-right">3k/2.5k(pcs)</TableHead>
+                  <TableHead className="text-right">5k/4k(pcs)</TableHead>
+                  <TableHead className="text-right">10k(pcs)</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
