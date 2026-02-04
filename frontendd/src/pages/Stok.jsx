@@ -72,6 +72,13 @@ export default function StokPage() {
   const formatStok = (jumlah) => {
     if (jumlah <= 0)
       return (
+        <span className="text-red-500 font-bold uppercase text-xl">Kosong</span>
+      );
+    return <span className="text-gray-800">{jumlah}</span>;
+  };
+  const formatStokTable = (jumlah) => {
+    if (jumlah <= 0)
+      return (
         <span className="text-red-500 font-bold uppercase text-xs">Kosong</span>
       );
     return <span className="text-gray-800">{jumlah}</span>;
@@ -107,12 +114,11 @@ export default function StokPage() {
       {/* --- BAGIAN 1: CARD AKUMULASI (REALTIME) --- */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {/* Card 3k */}
-        <Card className="border-l-4 border-l-blue-500 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">
+        <Card className="shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+            <CardTitle className="text-md font-medium text-gray-600">
               Tempe 3k
             </CardTitle>
-            <Box className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -123,12 +129,11 @@ export default function StokPage() {
         </Card>
 
         {/* Card 5k */}
-        <Card className="border-l-4 border-l-green-500 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">
+        <Card className="shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+            <CardTitle className="text-md font-medium text-gray-600">
               Tempe 5k
             </CardTitle>
-            <Package className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -139,12 +144,11 @@ export default function StokPage() {
         </Card>
 
         {/* Card 10k */}
-        <Card className="border-l-4 border-l-purple-500 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">
+        <Card className="shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+            <CardTitle className="text-md font-medium text-gray-600">
               Tempe 10k
             </CardTitle>
-            <Layers className="h-4 w-4 text-purple-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -155,12 +159,11 @@ export default function StokPage() {
         </Card>
 
         {/* Card Total */}
-        <Card className="bg-slate-900 text-white shadow-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-300">
+        <Card className="bg-white text-black shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+            <CardTitle className="text-sm font-medium text-slate-600">
               Total
             </CardTitle>
-            <Package className="h-4 w-4 text-slate-100" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
@@ -254,13 +257,13 @@ export default function StokPage() {
 
                       {/* Kolom Sisa Stok Per Hari */}
                       <TableCell className="text-right border-l font-mono text-sm">
-                        {formatStok(item.sisa_stok_3k)}
+                        {formatStokTable(item.sisa_stok_3k)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
-                        {formatStok(item.sisa_stok_5k)}
+                        {formatStokTable(item.sisa_stok_5k)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
-                        {formatStok(item.sisa_stok_10k)}
+                        {formatStokTable(item.sisa_stok_10k)}
                       </TableCell>
                       <TableCell className="text-right font-bold text-slate-800 bg-slate-50">
                         {item.total_sisa_stok <= 0
