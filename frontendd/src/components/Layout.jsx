@@ -10,7 +10,11 @@ import {
   BarChart3,
   LogOut,
   Menu,
-  X
+  X,
+  NotebookPen,
+  Package2,
+  Package2Icon,
+  PackageOpen
 } from 'lucide-react';
 
 export default function Layout({ children }) {
@@ -25,12 +29,13 @@ export default function Layout({ children }) {
   };
 
   const menuItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/penjualan', label: 'Penjualan', icon: ShoppingCart },
-    { path: '/return', label: 'Return', icon: RotateCcw },
-    { path: '/produksi', label: 'Produksi', icon: Package },
-    { path: '/pengeluaran', label: 'Pengeluaran', icon: Wallet },
-    { path: '/laporan-laba', label: 'Laporan Laba', icon: BarChart3 },
+    { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { path: "/penjualan", label: "Penjualan", icon: ShoppingCart },
+    { path: "/return", label: "Return", icon: RotateCcw },
+    { path: "/produksi", label: "Produksi", icon: Package },
+    { path: "/stok", label: "Stok Produksi", icon: PackageOpen },
+    { path: "/pengeluaran", label: "Pengeluaran", icon: Wallet },
+    { path: "/laporan-laba", label: "Laporan Laba", icon: BarChart3 },
   ];
 
   return (

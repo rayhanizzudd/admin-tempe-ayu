@@ -8,6 +8,7 @@ import ReturnPage from "@/pages/ReturnPage";
 import Produksi from "@/pages/Produksi";
 import Pengeluaran from "@/pages/Pengeluaran";
 import LaporanLaba from "@/pages/LaporanLaba";
+import Stok from "@/pages/Stok";
 import Layout from "@/components/Layout";
 
 function App() {
@@ -77,6 +78,16 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <Produksi />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/stok"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Stok/>
                 </Layout>
               </ProtectedRoute>
             }
