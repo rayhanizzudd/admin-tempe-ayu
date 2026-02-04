@@ -47,6 +47,7 @@ class KategoriPengeluaran(str, Enum):
     ragi = "ragi"
     air = "air"
     listrik = "listrik"
+    gaji = "gaji karyawan"
 
 # Models
 class LoginRequest(BaseModel):

@@ -161,6 +161,7 @@ export default function Pengeluaran() {
                       <SelectItem value="ragi">Ragi</SelectItem>
                       <SelectItem value="air">Air</SelectItem>
                       <SelectItem value="listrik">Listrik</SelectItem>
+                      <SelectItem value="gaji">Gaji Karyawan</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
