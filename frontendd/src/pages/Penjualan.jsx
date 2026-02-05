@@ -20,7 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import {Plus, Check, X } from "lucide-react";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -70,6 +70,25 @@ export default function Penjualan() {
       if (error.response?.status === 401) {
         // Handle unauthorized redirect if needed
       }
+    }
+  };
+
+  // Fungsi untuk mengubah status Tempo <-> Lunas
+  const handleToggleStatus = async (id) => {
+    try {
+      await axios.patch(
+        `${API}/penjualan/${id}/toggle-status`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        },
+      );
+
+      toast.success("Status pembayaran berhasil diperbarui!");
+      fetchPenjualan(); // Refresh data tabel agar status berubah di UI
+    } catch (error) {
+      console.error("Error toggling status:", error);
+      toast.error("Gagal mengubah status pembayaran!");
     }
   };
 
@@ -349,13 +368,14 @@ export default function Penjualan() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Tanggal</TableHead>
-                  <TableHead>Pembeli</TableHead>
-                  <TableHead>Kategori</TableHead>
-                  <TableHead className="text-right">3k/2.5k(pcs)</TableHead>
-                  <TableHead className="text-right">5k/4k(pcs)</TableHead>
-                  <TableHead className="text-right">10k(pcs)</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="text-center">Pembeli</TableHead>
+                  <TableHead className="text-center">Kategori</TableHead>
+                  <TableHead className="text-center">3k/2.5k(pcs)</TableHead>
+                  <TableHead className="text-center">5k/4k(pcs)</TableHead>
+                  <TableHead className="text-center">10k(pcs)</TableHead>
+                  <TableHead className="text-center">Total</TableHead>
+                  <TableHead className="text-center">Status</TableHead>
+                  <TableHead className="text-center">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -374,10 +394,10 @@ export default function Penjualan() {
                       <TableCell>
                         {new Date(item.tanggal).toLocaleDateString("id-ID")}
                       </TableCell>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium text-center">
                         {item.pembeli}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="text-center">
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
                           ${item.kategori_pembeli === "Grosir" ? "bg-purple-100 text-purple-800" : "bg-lime-100 text-lime-800"}`}
@@ -385,19 +405,19 @@ export default function Penjualan() {
                           {item.kategori_pembeli}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">
                         {item.tempe_3k_pcs}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">
                         {item.tempe_5k_pcs}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">
                         {item.tempe_10k_pcs}
                       </TableCell>
-                      <TableCell className="text-right font-semibold">
+                      <TableCell className="text-center font-semibold">
                         {formatRupiah(item.total_penjualan)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="text-center">
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             item.status_pembayaran === "Lunas"
@@ -407,6 +427,31 @@ export default function Penjualan() {
                         >
                           {item.status_pembayaran}
                         </span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {item.status_pembayaran === "Tempo" ? (
+                          // Jika Tempo -> Tampilkan Tombol Centang (Hijau)
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-green-600 border-green-200 hover:bg-green-50 hover:text-green-700"
+                            onClick={() => handleToggleStatus(item.id)}
+                            title="Tandai Lunas"
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          // Jika Lunas -> Tampilkan Tombol Silang (Merah)
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                            onClick={() => handleToggleStatus(item.id)}
+                            title="Kembalikan ke Tempo"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

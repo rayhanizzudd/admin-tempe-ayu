@@ -21,6 +21,9 @@ Pastikan di komputer sudah terinstall:
     npm install
     ```
 
+4. **jalankan Frontend**
+    npm run dev 
+
 ## ⚙️ Konfigurasi Environment (.env)
 
 Buat file baru bernama **`.env`** di dalam folder `frontend`.
