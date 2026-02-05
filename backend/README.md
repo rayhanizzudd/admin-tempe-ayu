@@ -31,6 +31,10 @@ Pastikan di komputer sudah terinstall:
     pip install -r requirements.txt
     ```
 
+4. **jalankan Backend**
+    venv\Scripts\activate
+    uvicorn server:app --reload 
+
 ## ⚙️ Konfigurasi Environment (.env)
 
 Buat file baru bernama **`.env`** di dalam folder `backend`.
