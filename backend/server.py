@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 import bcrypt
 import jwt
 from enum import Enum
@@ -203,33 +203,49 @@ async def get_dashboard_summary(tanggal: Optional[str] = None, _: dict = Depends
     if not tanggal:
         tanggal = date.today().isoformat()
     
-    # Total produksi hari ini
+    # 1. Total produksi hari ini (Tetap)
     produksi = await db.produksi_harian.find_one({"tanggal": tanggal}, {"_id": 0})
     total_produksi = produksi['total_produksi'] if produksi else 0
     
-    # Total penjualan hari ini
+    # 2. Ambil semua data penjualan hari ini
     penjualan_list = await db.penjualan.find({"tanggal": tanggal}, {"_id": 0}).to_list(1000)
-    total_penjualan = sum(p['total_penjualan'] for p in penjualan_list)
     
-    # Total return hari ini
+    # --- PERBAIKAN DISINI ---
+    # Hitung terpisah antara LUNAS (Uang Masuk) dan TEMPO (Piutang)
+    total_uang_masuk = 0
+    total_piutang = 0 # Opsional: jika nanti ingin ditampilkan di dashboard
+    
+    for p in penjualan_list:
+        # Pastikan field status ada, default ke Lunas jika data lama tidak punya status
+        status = p.get('status_pembayaran', 'Lunas') 
+        
+        if status == 'Lunas':
+            total_uang_masuk += p['total_penjualan']
+        else:
+            total_piutang += p['total_penjualan']
+
+    # 3. Total return hari ini (Tetap)
+    # Asumsi: Return mengurangi uang kas
     return_list = await db.return_penjualan.find({"tanggal": tanggal}, {"_id": 0}).to_list(1000)
     total_return = sum(r['total_return'] for r in return_list)
     
-    # Total pengeluaran hari ini
+    # 4. Total pengeluaran hari ini (Tetap)
     pengeluaran_list = await db.pengeluaran.find({"tanggal": tanggal}, {"_id": 0}).to_list(1000)
     total_pengeluaran = sum(p['jumlah'] for p in pengeluaran_list)
     
-    # Hitung omzet dan laba
-    omzet = total_penjualan - total_return
-    laba = omzet - total_pengeluaran
+    # 5. Hitung Omzet & Laba (CASH BASIS)
+    # Omzet sekarang hanya menghitung uang yang statusnya LUNAS dikurangi Return
+    omzet_bersih = total_uang_masuk - total_return
+    
+    # Laba = Omzet Bersih - Pengeluaran
+    laba_bersih = omzet_bersih - total_pengeluaran
     
     return DashboardSummary(
         total_produksi_hari_ini=total_produksi,
-        total_penjualan_hari_ini=omzet,
+        total_penjualan_hari_ini=omzet_bersih, # Ini sekarang hanya menampilkan Cash In
         total_pengeluaran_hari_ini=total_pengeluaran,
-        laba_hari_ini=laba
+        laba_hari_ini=laba_bersih
     )
-
 @api_router.post("/penjualan", response_model=Penjualan)
 async def create_penjualan(data: PenjualanCreate, _: dict = Depends(verify_token)):
     # --- LOGIKA BARU HARGA BERDASARKAN KATEGORI ---
@@ -271,6 +287,37 @@ async def create_penjualan(data: PenjualanCreate, _: dict = Depends(verify_token
     }
     await db.penjualan.insert_one(doc)
     return Penjualan(**doc)
+
+@api_router.patch("/penjualan/{id_penjualan}/toggle-status", response_model=Penjualan)
+async def toggle_status_penjualan(id_penjualan: str, _: dict = Depends(verify_token)):
+    # 1. Cari data penjualan berdasarkan ID
+    existing_penjualan = await db.penjualan.find_one({"id": id_penjualan}, {"_id": 0})
+    
+    if not existing_penjualan:
+        raise HTTPException(status_code=404, detail="Data penjualan tidak ditemukan")
+
+    # 2. Logika Toggle (Tempo <-> Lunas)
+    current_status = existing_penjualan.get("status_pembayaran")
+    new_status = None
+
+    # Asumsi: Enum StatusPembayaran memiliki value "Lunas" dan "Tempo"
+    # Sesuaikan string "Tempo" dan "Lunas" dengan value persis di Enum Anda jika berbeda
+    if current_status == StatusPembayaran.tempo.value:
+        new_status = StatusPembayaran.lunas.value
+    else:
+        # Jika status Lunas (atau lainnya), ubah jadi Tempo
+        new_status = StatusPembayaran.tempo.value
+
+    # 3. Update database
+    await db.penjualan.update_one(
+        {"id": id_penjualan},
+        {"$set": {"status_pembayaran": new_status}}
+    )
+
+    # 4. Update object di memory untuk return response yang akurat tanpa query ulang
+    existing_penjualan["status_pembayaran"] = new_status
+    
+    return Penjualan(**existing_penjualan)
 
 @api_router.get("/penjualan", response_model=List[Penjualan])
 async def get_penjualan(_: dict = Depends(verify_token)):
@@ -516,31 +563,53 @@ async def get_pengeluaran(_: dict = Depends(verify_token)):
     pengeluaran_list = await db.pengeluaran.find({}, {"_id": 0}).sort("tanggal", -1).to_list(1000)
     return [Pengeluaran(**p) for p in pengeluaran_list]
 
+
 @api_router.get("/laporan/laba", response_model=List[LaporanLabaItem])
 async def get_laporan_laba(period: str = "daily", limit: int = 30, _: dict = Depends(verify_token)):
-    # Get all data
-    penjualan_list = await db.penjualan.find({}, {"_id": 0}).to_list(10000)
-    return_list = await db.return_penjualan.find({}, {"_id": 0}).to_list(10000)
-    pengeluaran_list = await db.pengeluaran.find({}, {"_id": 0}).to_list(10000)
+    # --- 1. OPTIMASI: Hitung Batas Tanggal ---
+    # Jangan ambil semua data dari awal sejarah, ambil secukupnya sesuai limit
+    # Kita lebihkan sedikit (+5 hari) untuk safety margin
+    today = date.today()
+    start_date = (today - timedelta(days=limit + 5)).isoformat()
     
-    # Group by date
+    query_filter = {"tanggal": {"$gte": start_date}}
+
+    # --- 2. GET DATA (Dengan Filter Tanggal) ---
+    penjualan_list = await db.penjualan.find(query_filter, {"_id": 0}).to_list(10000)
+    return_list = await db.return_penjualan.find(query_filter, {"_id": 0}).to_list(10000)
+    pengeluaran_list = await db.pengeluaran.find(query_filter, {"_id": 0}).to_list(10000)
+    
+    # --- 3. GROUPING ---
     from collections import defaultdict
     data_by_date = defaultdict(lambda: {"omzet": 0, "pengeluaran": 0})
     
+    # Proses Penjualan (HANYA YANG LUNAS)
     for p in penjualan_list:
-        data_by_date[p['tanggal']]['omzet'] += p['total_penjualan']
+        # Default ke 'Lunas' jika data lama tidak punya field status
+        status = p.get('status_pembayaran', 'Lunas')
+        
+        # LOGIKA INTI: Hanya hitung jika Lunas
+        if status == 'Lunas':
+            data_by_date[p['tanggal']]['omzet'] += p['total_penjualan']
+        # Jika Tempo, uang belum masuk -> Jangan tambah ke Omzet
     
+    # Proses Return (Mengurangi Omzet)
     for r in return_list:
         data_by_date[r['tanggal']]['omzet'] -= r['total_return']
     
+    # Proses Pengeluaran
     for p in pengeluaran_list:
         data_by_date[p['tanggal']]['pengeluaran'] += p['jumlah']
     
-    # Convert to list and sort
+    # --- 4. FORMATTING ---
     result = []
-    for tanggal in sorted(data_by_date.keys(), reverse=True)[:limit]:
+    # Ambil tanggal yang tersedia, urutkan terbaru dulu untuk dipotong sesuai limit
+    sorted_dates_desc = sorted(data_by_date.keys(), reverse=True)[:limit]
+    
+    for tanggal in sorted_dates_desc:
         data = data_by_date[tanggal]
         laba = data['omzet'] - data['pengeluaran']
+        
         result.append(LaporanLabaItem(
             tanggal=tanggal,
             omzet=data['omzet'],
@@ -548,6 +617,7 @@ async def get_laporan_laba(period: str = "daily", limit: int = 30, _: dict = Dep
             laba=laba
         ))
     
+    # Return urut dari tanggal tua ke muda (Ascending) untuk grafik Frontend
     return sorted(result, key=lambda x: x.tanggal)
 
 # Include router
