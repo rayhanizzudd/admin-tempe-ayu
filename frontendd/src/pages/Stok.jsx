@@ -49,17 +49,18 @@ export default function StokPage() {
     try {
       // Panggil endpoint stok (summary) dan stok/riwayat (tabel)
       const [resStok, resRiwayat] = await Promise.all([
-        axios.get(`${API}/stok`, {
+        axios.get(`${API}/stok/mon`, {
           headers: { Authorization: `Bearer ${getToken()}` },
         }),
-        axios.get(`${API}/stok/riwayat`, {
+        axios.get(`${API}/stok/produk`, {
           headers: { Authorization: `Bearer ${getToken()}` },
         }),
       ]);
 
       setStokTotal(resStok.data);
       setRiwayatList(resRiwayat.data);
-      toast.success("Data stok diperbarui");
+      console.log("Fetched stok data:", resStok.data);
+      // toast.success("Data stok diperbarui");
     } catch (error) {
       console.error("Error fetching data:", error);
       toast.error("Gagal mengambil data");
@@ -185,40 +186,116 @@ export default function StokPage() {
           <h2 className="text-xl font-bold text-gray-800">Buku Stok Harian</h2>
         </div>
 
-        <Card className="border shadow-sm">
-          <CardContent className="p-0">
-            <Table>
+        <Card className="border shadow-sm overflow-hidden">
+          <CardContent className="p-0 overflow-x-auto">
+            <Table className="border-collapse border border-gray-200">
               <TableHeader>
+                {/* Baris Header Pertama (Group) */}
+                <TableRow className="bg-gray-100">
+                  <TableHead
+                    rowSpan={2}
+                    className="w-[50px] text-center border text-gray-900 font-bold"
+                  >
+                    NO
+                  </TableHead>
+                  <TableHead
+                    rowSpan={2}
+                    className="w-[120px] text-center border text-gray-900 font-bold"
+                  >
+                    Tanggal
+                  </TableHead>
+                  <TableHead
+                    colSpan={3}
+                    className="text-center border border-b-gray-300 text-blue-700 font-bold bg-blue-50"
+                  >
+                    Produksi
+                  </TableHead>
+                  <TableHead
+                    colSpan={3}
+                    className="text-center border border-b-gray-300 text-orange-700 font-bold bg-orange-50"
+                  >
+                    Penjualan
+                  </TableHead>
+                  <TableHead
+                    colSpan={3}
+                    className="text-center border border-b-gray-300 text-red-700 font-bold bg-red-50"
+                  >
+                    Return
+                  </TableHead>
+                  <TableHead
+                    colSpan={3}
+                    className="text-center border border-b-gray-300 text-yellow-700 font-bold bg-yellow-50"
+                  >
+                    Rusak
+                  </TableHead>
+                  <TableHead
+                    colSpan={3}
+                    className="text-center border border-b-gray-300 text-green-700 font-bold bg-green-50"
+                  >
+                    Sisa
+                  </TableHead>
+                </TableRow>
+
+                {/* Baris Header Kedua (Varian) */}
                 <TableRow className="bg-gray-50">
-                  <TableHead className="w-[180px]">Tanggal</TableHead>
-                  <TableHead className="text-center text-blue-600">
-                    Total Masuk
-                    <br />
-                    <span className="text-[10px] font-normal text-gray-500">
-                      (Prod + Return)
-                    </span>
+                  {/* Produksi */}
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    3k
                   </TableHead>
-                  <TableHead className="text-center text-orange-600">
-                    Total Keluar
-                    <br />
-                    <span className="text-[10px] font-normal text-gray-500">
-                      (Penjualan)
-                    </span>
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    5k
                   </TableHead>
-                  {/* Stok Akhir Per Varian */}
-                  <TableHead className="text-right border-l">Sisa 3k</TableHead>
-                  <TableHead className="text-right">Sisa 5k</TableHead>
-                  <TableHead className="text-right">Sisa 10k</TableHead>
-                  <TableHead className="text-right font-bold bg-slate-50">
-                    Total Sisa
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    10k
+                  </TableHead>
+                  {/* Penjualan */}
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    3k
+                  </TableHead>
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    5k
+                  </TableHead>
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    10k
+                  </TableHead>
+                  {/* Return */}
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    3k
+                  </TableHead>
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    5k
+                  </TableHead>
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    10k
+                  </TableHead>
+                  {/* Rusak */}
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    3k
+                  </TableHead>
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    5k
+                  </TableHead>
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    10k
+                  </TableHead>
+                  {/* Sisa */}
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    3k
+                  </TableHead>
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    5k
+                  </TableHead>
+                  <TableHead className="text-center border text-xs font-semibold text-gray-600">
+                    10k
                   </TableHead>
                 </TableRow>
               </TableHeader>
+
               <TableBody>
                 {riwayatList.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={14}
                       className="text-center py-8 text-gray-500"
                     >
                       Belum ada riwayat transaksi.
@@ -226,49 +303,73 @@ export default function StokPage() {
                   </TableRow>
                 ) : (
                   riwayatList.map((item, index) => (
-                    <TableRow key={index} className="hover:bg-slate-50">
-                      <TableCell className="font-medium text-gray-700">
+                    <TableRow
+                      key={index}
+                      className={`hover:bg-slate-50 text-xs sm:text-sm ${item.stat_exp === true ? "bg-red-100 hover:bg-red-300" : ""}`}
+                    >
+                      {/* NO */}
+                      <TableCell className="text-center border py-2">
+                        {index + 1}
+                      </TableCell>
+
+                      {/* Tanggal */}
+                      <TableCell className="text-center border font-medium whitespace-nowrap">
                         {formatDate(item.tanggal)}
                       </TableCell>
 
-                      {/* Kolom Masuk */}
-                      <TableCell className="text-center">
-                        {item.masuk_pcs > 0 ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            <ArrowUp className="w-3 h-3 mr-1" />{" "}
-                            {item.masuk_pcs}
-                          </span>
-                        ) : (
-                          <span className="text-gray-300">-</span>
-                        )}
+                      {/* --- Kolom Produksi --- */}
+                      <TableCell className="text-center border bg-blue-50/30">
+                        {item.prod_stok_3k || "-"}
+                      </TableCell>
+                      <TableCell className="text-center border bg-blue-50/30">
+                        {item.prod_stok_5k || "-"}
+                      </TableCell>
+                      <TableCell className="text-center border bg-blue-50/30">
+                        {item.prod_stok_10k || "-"}
                       </TableCell>
 
-                      {/* Kolom Keluar */}
-                      <TableCell className="text-center">
-                        {item.keluar_pcs > 0 ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                            <ArrowDown className="w-3 h-3 mr-1" />{" "}
-                            {item.keluar_pcs}
-                          </span>
-                        ) : (
-                          <span className="text-gray-300">-</span>
-                        )}
+                      {/* --- Kolom Penjualan --- */}
+                      <TableCell className="text-center border bg-orange-50/30">
+                        {item.sell_stok_3k || "-"}
+                      </TableCell>
+                      <TableCell className="text-center border bg-orange-50/30">
+                        {item.sell_stok_5k || "-"}
+                      </TableCell>
+                      <TableCell className="text-center border bg-orange-50/30">
+                        {item.sell_stok_10k || "-"}
                       </TableCell>
 
-                      {/* Kolom Sisa Stok Per Hari */}
-                      <TableCell className="text-right border-l font-mono text-sm">
-                        {formatStokTable(item.sisa_stok_3k)}
+                      {/* --- Kolom Return --- */}
+                      <TableCell className="text-center border bg-red-50/30">
+                        {item.res_stok_3k || "-"}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {formatStokTable(item.sisa_stok_5k)}
+                      <TableCell className="text-center border bg-red-50/30">
+                        {item.res_stok_5k || "-"}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {formatStokTable(item.sisa_stok_10k)}
+                      <TableCell className="text-center border bg-red-50/30">
+                        {item.res_stok_10k || "-"}
                       </TableCell>
-                      <TableCell className="text-right font-bold text-slate-800 bg-slate-50">
-                        {item.total_sisa_stok <= 0
-                          ? "KOSONG"
-                          : item.total_sisa_stok}
+
+                      {/* --- Kolom Rusak --- */}
+                      <TableCell className="text-center border bg-red-50/30">
+                        {item.rsk_stok_3k || "-"}
+                      </TableCell>
+                      <TableCell className="text-center border bg-red-50/30">
+                        {item.rsk_stok_5k || "-"}
+                      </TableCell>
+                      <TableCell className="text-center border bg-red-50/30">
+                        {item.rsk_stok_10k || "-"}
+                      </TableCell>
+
+                      {/* --- Kolom Sisa --- */}
+                      <TableCell className="text-center border font-semibold bg-green-50/30">
+                        {item.sisa_stok_3k}
+                      </TableCell>
+                      <TableCell className="text-center border font-semibold bg-green-50/30">
+                        {item.sisa_stok_5k}
+                      </TableCell>
+                      <TableCell className="text-center border font-semibold bg-green-50/30">
+                        {item.sisa_stok_10k}
                       </TableCell>
                     </TableRow>
                   ))
