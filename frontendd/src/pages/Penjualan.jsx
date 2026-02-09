@@ -20,7 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import {Plus, Check, X } from "lucide-react";
+import { Plus } from "lucide-react";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -30,13 +30,21 @@ const getToken = () => localStorage.getItem("token");
 export default function Penjualan() {
   const [showForm, setShowForm] = useState(false);
   const [penjualanList, setPenjualanList] = useState([]);
+  const [riwayatList, setRiwayatList] = useState([]);
+  
   const [loading, setLoading] = useState(false);
+
+  // State untuk Opsi Tanggal Produksi (Dropdown)
+  const [produksiOptions, setProduksiOptions] = useState([]);
+  // [KURANG 1] State untuk menyimpan sisa stok dari tanggal yang dipilih
+  const [selectedStock, setSelectedStock] = useState(null);
 
   // State form
   const [formData, setFormData] = useState({
-    tanggal: new Date().toISOString().split("T")[0],
+    tanggal: "", // Tanggal Produksi (dari Dropdown)
+    tanggal_penjualan: new Date().toISOString().split("T")[0], // Tanggal Penjualan (Hari ini)
     pembeli: "",
-    kategori_pembeli: "Eceran", // Default Eceran
+    kategori_pembeli: "Eceran",
     tempe_3k_pcs: 0,
     tempe_5k_pcs: 0,
     tempe_10k_pcs: 0,
@@ -48,6 +56,8 @@ export default function Penjualan() {
 
   useEffect(() => {
     fetchPenjualan();
+    fetchProduksiOptions();
+    fetchRiwayatStok(); // Ambil data riwayat stok saat load
   }, []);
 
   // Effect untuk mengubah harga satuan saat Kategori berubah
@@ -59,6 +69,32 @@ export default function Penjualan() {
     }
   }, [formData.kategori_pembeli]);
 
+  const handleProduksiChange = (val) => {
+    // 1. Simpan value tanggal ke form
+    setFormData({ ...formData, tanggal: val });
+
+    // 2. Cari data detail stok dari opsi yang ada
+    const stockItem = riwayatList.find((item) => item.tanggal === val);
+
+    if (stockItem) {
+      // 3. Simpan sisa stok ke state selectedStock
+      setSelectedStock({
+        sisa_3k: stockItem.sisa_stok_3k, // Field dari endpoint /stok/riwayat
+        sisa_5k: stockItem.sisa_stok_5k,
+        sisa_10k: stockItem.sisa_stok_10k,
+      });
+
+      // (Opsional) Reset input jumlah agar aman
+      setFormData((prev) => ({
+        ...prev,
+        tanggal: val,
+        tempe_3k_pcs: 0,
+        tempe_5k_pcs: 0,
+        tempe_10k_pcs: 0,
+      }));
+    }
+  };
+
   const fetchPenjualan = async () => {
     try {
       const response = await axios.get(`${API}/penjualan`, {
@@ -67,13 +103,42 @@ export default function Penjualan() {
       setPenjualanList(response.data);
     } catch (error) {
       console.error("Error fetching penjualan:", error);
-      if (error.response?.status === 401) {
-        // Handle unauthorized redirect if needed
-      }
     }
   };
 
-  // Fungsi untuk mengubah status Tempo <-> Lunas
+  // --- FETCH DATA PRODUKSI UNTUK DROPDOWN ---
+  const fetchProduksiOptions = async () => {
+    try {
+      const response = await axios.get(`${API}/produksi`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+
+      // Filter: Hanya ambil yang BELUM EXPIRED
+      const activeProduksi = response.data
+        .filter((item) => !item.stat_exp)
+        .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal)); // Urutkan terbaru
+      setProduksiOptions(activeProduksi);
+    } catch (error) {
+      console.error("Gagal ambil data produksi:", error);
+    }
+  };
+
+  const fetchRiwayatStok = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get(`${API}/stok/produk`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      console.log("Riwayat Stok:", response.data);
+      setRiwayatList(response.data);
+    } catch (error) {
+      console.error("Gagal mengambil riwayat stok:", error);
+      toast.error("Gagal memuat data stok.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleToggleStatus = async (id) => {
     try {
       await axios.patch(
@@ -83,9 +148,8 @@ export default function Penjualan() {
           headers: { Authorization: `Bearer ${getToken()}` },
         },
       );
-
       toast.success("Status pembayaran berhasil diperbarui!");
-      fetchPenjualan(); // Refresh data tabel agar status berubah di UI
+      fetchPenjualan();
     } catch (error) {
       console.error("Error toggling status:", error);
       toast.error("Gagal mengubah status pembayaran!");
@@ -97,14 +161,24 @@ export default function Penjualan() {
     setLoading(true);
 
     try {
+      // Validasi: Pastikan tanggal produksi dipilih
+      if (!formData.tanggal) {
+        toast.error("Harap pilih Tanggal Produksi!");
+        setLoading(false);
+        return;
+      }
+      console.log("Submitting form data:", formData);
+
       await axios.post(`${API}/penjualan`, formData, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
 
       toast.success("Data penjualan berhasil ditambahkan!");
       setShowForm(false);
+
       // Reset form
       setFormData({
+        tanggal_produksi: "",
         tanggal: new Date().toISOString().split("T")[0],
         pembeli: "",
         kategori_pembeli: "Eceran",
@@ -116,7 +190,11 @@ export default function Penjualan() {
       fetchPenjualan();
     } catch (error) {
       console.error(error);
-      toast.error("Gagal menambahkan data penjualan!");
+      let msg = "Gagal menambahkan data penjualan!";
+      if (error.response?.data?.detail) {
+        msg = error.response.data.detail;
+      }
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -131,12 +209,12 @@ export default function Penjualan() {
     }).format(amount);
   };
 
-  // Kalkulasi subtotal untuk preview di Frontend
   const calculateSubtotal = () => {
-    const subtotal_3k = formData.tempe_3k_pcs * prices.p3k;
-    const subtotal_5k = formData.tempe_5k_pcs * prices.p5k;
-    const subtotal_10k = formData.tempe_10k_pcs * prices.p10k;
-    return subtotal_3k + subtotal_5k + subtotal_10k;
+    return (
+      formData.tempe_3k_pcs * prices.p3k +
+      formData.tempe_5k_pcs * prices.p5k +
+      formData.tempe_10k_pcs * prices.p10k
+    );
   };
 
   return (
@@ -165,15 +243,61 @@ export default function Penjualan() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* --- UPDATE: DROPDOWN TANGGAL PRODUKSI --- */}
                 <div>
-                  <Label htmlFor="tanggal">Tanggal</Label>
-                  <Input
-                    id="tanggal"
-                    data-testid="tanggal-input"
-                    type="date"
+                  <Label htmlFor="tanggal_produksi">
+                    Tanggal Produksi (Sumber Stok)
+                  </Label>
+                  <Select
                     value={formData.tanggal}
+                    // onValueChange={(val) =>
+                    //   setFormData({ ...formData, tanggal: val })
+                    // }
+                    onValueChange={handleProduksiChange}
+                    required
+                  >
+                    <SelectTrigger id="tanggal_produksi" className="w-full">
+                      <SelectValue placeholder="Pilih Tanggal Produksi" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {produksiOptions.length === 0 ? (
+                        <SelectItem value="kosong" disabled>
+                          Tidak ada stok tersedia (Semua expired/kosong)
+                        </SelectItem>
+                      ) : (
+                        produksiOptions.map((item) => (
+                          <SelectItem
+                            key={item.id}
+                            value={item.tanggal.split("T")[0]}
+                          >
+                            {new Date(item.tanggal).toLocaleDateString(
+                              "id-ID",
+                              {
+                                weekday: "long",
+                                year: "numeric",
+                                month: "long",
+                                day: "numeric",
+                              },
+                            )}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* --- INPUT TANGGAL TRANSAKSI PENJUALAN --- */}
+                <div>
+                  <Label htmlFor="tanggal">Tanggal Penjualan</Label>
+                  <Input
+                    id="tanggal_penjualan"
+                    type="date"
+                    value={formData.tanggal_penjualan}
                     onChange={(e) =>
-                      setFormData({ ...formData, tanggal: e.target.value })
+                      setFormData({
+                        ...formData,
+                        tanggal_penjualan: e.target.value,
+                      })
                     }
                     required
                   />
@@ -183,7 +307,6 @@ export default function Penjualan() {
                   <Label htmlFor="pembeli">Nama Pembeli</Label>
                   <Input
                     id="pembeli"
-                    data-testid="pembeli-input"
                     type="text"
                     placeholder="Masukkan nama pembeli"
                     value={formData.pembeli}
@@ -202,7 +325,7 @@ export default function Penjualan() {
                       setFormData({ ...formData, kategori_pembeli: value })
                     }
                   >
-                    <SelectTrigger data-testid="kategori-pembeli-select">
+                    <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -224,120 +347,119 @@ export default function Penjualan() {
                       setFormData({ ...formData, status_pembayaran: value })
                     }
                   >
-                    <SelectTrigger data-testid="status-pembayaran-select">
+                    <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Lunas">Lunas</SelectItem>
-                      <SelectItem value="Tempo">Tempo</SelectItem>
+                      <SelectItem value="Tempo">Tempo (Hutang)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
+              
+              <div className="border-t pt-4 mt-4">
+                <h3 className="font-semibold mb-3">Detail Pesanan</h3>
 
-              <div className="border-t pt-4">
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  Jumlah Tempe (pcs)
-                  <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                    Mode Harga: {formData.kategori_pembeli}
-                  </span>
-                </h3>
+                {/* Tampilkan Info Sisa Stok jika sudah pilih tanggal */}
+                {selectedStock && (
+                  <div className="text-xs text-blue-600 mb-2 bg-blue-50 p-2 rounded">
+                    Sisa Stok Tersedia:
+                    <span className="ml-2 font-bold">
+                      3k: {selectedStock.sisa_3k}
+                    </span>
+                    <span className="ml-2 font-bold">
+                      5k: {selectedStock.sisa_5k}
+                    </span>
+                    <span className="ml-2 font-bold">
+                      10k: {selectedStock.sisa_10k}
+                    </span>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Input 3K */}
                   <div>
-                    {/* Label Dinamis sesuai harga aktif */}
-                    <Label
-                      htmlFor="tempe_3k_pcs"
-                      className="flex justify-between"
-                    >
-                      <span>Tempe Kecil</span>
-                      <span className="text-gray-500 font-normal text-xs">
-                        {formatRupiah(prices.p3k)}/pcs
-                      </span>
-                    </Label>
+                    <Label>Tempe 3k</Label>
                     <Input
-                      id="tempe_3k_pcs"
-                      data-testid="tempe-3k-input"
                       type="number"
                       min="0"
+                      // LIMIT MAX SESUAI SISA STOK
+                      max={selectedStock ? selectedStock.sisa_3k : 0}
+                      // DISABLE JIKA BELUM PILIH TANGGAL atau STOK HABIS
+                      disabled={!selectedStock || selectedStock.sisa_3k === 0}
                       value={formData.tempe_3k_pcs}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          tempe_3k_pcs: parseInt(e.target.value) || 0,
-                        })
-                      }
+                      onChange={(e) => {
+                        let val = parseInt(e.target.value) || 0;
+                        // Validasi Manual agar tidak melebihi stok
+                        if (selectedStock && val > selectedStock.sisa_3k) {
+                          val = selectedStock.sisa_3k;
+                          toast.warning(
+                            `Maksimal stok 3k tersedia: ${selectedStock.sisa_3k}`,
+                          );
+                        }
+                        setFormData({ ...formData, tempe_3k_pcs: val });
+                      }}
                     />
                   </div>
 
+                  {/* Input 5K */}
                   <div>
-                    <Label
-                      htmlFor="tempe_5k_pcs"
-                      className="flex justify-between"
-                    >
-                      <span>Tempe Sedang</span>
-                      <span className="text-gray-500 font-normal text-xs">
-                        {formatRupiah(prices.p5k)}/pcs
-                      </span>
-                    </Label>
+                    <Label>Tempe 5k</Label>
                     <Input
-                      id="tempe_5k_pcs"
-                      data-testid="tempe-5k-input"
                       type="number"
                       min="0"
+                      max={selectedStock ? selectedStock.sisa_5k : 0}
+                      disabled={!selectedStock || selectedStock.sisa_5k === 0}
                       value={formData.tempe_5k_pcs}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          tempe_5k_pcs: parseInt(e.target.value) || 0,
-                        })
-                      }
+                      onChange={(e) => {
+                        let val = parseInt(e.target.value) || 0;
+                        if (selectedStock && val > selectedStock.sisa_5k) {
+                          val = selectedStock.sisa_5k;
+                          toast.warning(
+                            `Maksimal stok 5k tersedia: ${selectedStock.sisa_5k}`,
+                          );
+                        }
+                        setFormData({ ...formData, tempe_5k_pcs: val });
+                      }}
                     />
                   </div>
 
+                  {/* Input 10K */}
                   <div>
-                    <Label
-                      htmlFor="tempe_10k_pcs"
-                      className="flex justify-between"
-                    >
-                      <span>Tempe Besar</span>
-                      <span className="text-gray-500 font-normal text-xs">
-                        {formatRupiah(prices.p10k)}/pcs
-                      </span>
-                    </Label>
+                    <Label>Tempe 10k</Label>
                     <Input
-                      id="tempe_10k_pcs"
-                      data-testid="tempe-10k-input"
                       type="number"
                       min="0"
+                      max={selectedStock ? selectedStock.sisa_10k : 0}
+                      disabled={!selectedStock || selectedStock.sisa_10k === 0}
                       value={formData.tempe_10k_pcs}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          tempe_10k_pcs: parseInt(e.target.value) || 0,
-                        })
-                      }
+                      onChange={(e) => {
+                        let val = parseInt(e.target.value) || 0;
+                        if (selectedStock && val > selectedStock.sisa_10k) {
+                          val = selectedStock.sisa_10k;
+                          toast.warning(
+                            `Maksimal stok 10k tersedia: ${selectedStock.sisa_10k}`,
+                          );
+                        }
+                        setFormData({ ...formData, tempe_10k_pcs: val });
+                      }}
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold text-gray-700">
-                    Total Estimasi:
-                  </span>
-                  <span
-                    data-testid="total-preview"
-                    className="text-2xl font-bold text-lime-600"
-                  >
-                    {formatRupiah(calculateSubtotal())}
-                  </span>
-                </div>
+              <div className="bg-lime-50 border border-lime-200 rounded-lg p-4 flex justify-between items-center">
+                <span className="font-semibold text-gray-700">
+                  Total Harga:
+                </span>
+                <span className="text-2xl font-bold text-lime-600">
+                  {formatRupiah(calculateSubtotal())}
+                </span>
               </div>
 
               <div className="flex gap-3">
                 <Button
-                  data-testid="submit-penjualan-button"
                   type="submit"
                   disabled={loading}
                   className="bg-lime-500 hover:bg-lime-600 text-white"
@@ -357,10 +479,10 @@ export default function Penjualan() {
         </Card>
       )}
 
-      {/* Table */}
+      {/* Tabel Data Penjualan (Sama seperti sebelumnya, tidak diubah) */}
       <Card className="border-0 shadow-md">
         <CardHeader>
-          <CardTitle>Daftar Penjualan</CardTitle>
+          <CardTitle>Riwayat Penjualan</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -368,12 +490,9 @@ export default function Penjualan() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Tanggal</TableHead>
-                  <TableHead className="text-center">Pembeli</TableHead>
-                  <TableHead className="text-center">Kategori</TableHead>
-                  <TableHead className="text-center">3k/2.5k(pcs)</TableHead>
-                  <TableHead className="text-center">5k/4k(pcs)</TableHead>
-                  <TableHead className="text-center">10k(pcs)</TableHead>
-                  <TableHead className="text-center">Total</TableHead>
+                  <TableHead>Pembeli</TableHead>
+                  <TableHead>Kategori</TableHead>
+                  <TableHead className="text-right">Total (Rp)</TableHead>
                   <TableHead className="text-center">Status</TableHead>
                   <TableHead className="text-center">Aksi</TableHead>
                 </TableRow>
@@ -382,8 +501,8 @@ export default function Penjualan() {
                 {penjualanList.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
-                      className="text-center text-gray-500 py-8"
+                      colSpan={6}
+                      className="text-center py-8 text-gray-500"
                     >
                       Belum ada data penjualan
                     </TableCell>
@@ -392,66 +511,52 @@ export default function Penjualan() {
                   penjualanList.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell>
-                        {new Date(item.tanggal).toLocaleDateString("id-ID")}
+                        {/* LOGIKA: Jika tanggal_pembelian ada, pakai itu. Jika tidak, pakai tanggal (produksi) */}
+                        {new Date(
+                          item.tanggal_pembelian || item.tanggal,
+                        ).toLocaleDateString("id-ID", {
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                        })}
                       </TableCell>
-                      <TableCell className="font-medium text-center">
+                      <TableCell className="font-medium">
                         {item.pembeli}
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell>
                         <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
-                          ${item.kategori_pembeli === "Grosir" ? "bg-purple-100 text-purple-800" : "bg-lime-100 text-lime-800"}`}
+                          className={`px-2 py-1 rounded text-xs font-semibold ${
+                            item.kategori_pembeli === "Grosir"
+                              ? "bg-purple-100 text-purple-700"
+                              : "bg-blue-100 text-blue-700"
+                          }`}
                         >
                           {item.kategori_pembeli}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center">
-                        {item.tempe_3k_pcs}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {item.tempe_5k_pcs}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {item.tempe_10k_pcs}
-                      </TableCell>
-                      <TableCell className="text-center font-semibold">
+                      <TableCell className="text-right font-semibold">
                         {formatRupiah(item.total_penjualan)}
                       </TableCell>
                       <TableCell className="text-center">
                         <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          className={`px-2 py-1 rounded text-xs font-semibold ${
                             item.status_pembayaran === "Lunas"
-                              ? "bg-green-100 text-green-800"
-                              : "bg-amber-100 text-amber-800"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-orange-100 text-orange-700"
                           }`}
                         >
                           {item.status_pembayaran}
                         </span>
                       </TableCell>
                       <TableCell className="text-center">
-                        {item.status_pembayaran === "Tempo" ? (
-                          // Jika Tempo -> Tampilkan Tombol Centang (Hijau)
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-green-600 border-green-200 hover:bg-green-50 hover:text-green-700"
-                            onClick={() => handleToggleStatus(item.id)}
-                            title="Tandai Lunas"
-                          >
-                            <Check className="h-4 w-4" />
-                          </Button>
-                        ) : (
-                          // Jika Lunas -> Tampilkan Tombol Silang (Merah)
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-                            onClick={() => handleToggleStatus(item.id)}
-                            title="Kembalikan ke Tempo"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleToggleStatus(item.id)}
+                          className="text-xs h-7"
+                        >
+                          Ubah Status
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))
