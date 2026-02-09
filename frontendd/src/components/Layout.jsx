@@ -14,7 +14,9 @@ import {
   NotebookPen,
   Package2,
   Package2Icon,
-  PackageOpen
+  PackageOpen,
+  DollarSign,
+  Users
 } from 'lucide-react';
 
 export default function Layout({ children }) {
@@ -30,16 +32,17 @@ export default function Layout({ children }) {
 
   const menuItems = [
     { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { path: "/penjualan", label: "Penjualan", icon: ShoppingCart },
-    { path: "/return", label: "Return", icon: RotateCcw },
     { path: "/produksi", label: "Produksi", icon: Package },
     { path: "/stok", label: "Stok Produksi", icon: PackageOpen },
+    { path: "/penjualan", label: "Penjualan", icon: ShoppingCart },
+    { path: "/return", label: "Return", icon: RotateCcw },
+    { path: "/karyawan", label: "Karyawan", icon: Users  },
+    { path: "/gaji", label: "Gaji Karyawan", icon: DollarSign },
     { path: "/pengeluaran", label: "Pengeluaran", icon: Wallet },
     { path: "/laporan-laba", label: "Laporan Laba", icon: BarChart3 },
   ];
 
   return (
-    // 1. Ganti bg-red-200 menjadi bg-gray-50 agar area di belakang sidebar bersih
     <div className="min-h-screen bg-gray-50">
       {/* Mobile Header */}
       <div className="lg:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
