@@ -329,69 +329,8 @@ async def update_karyawan(id_karyawan: str, data: KaryawanUpdate, _: dict = Depe
     }
     
     await db.karyawan.update_one({"id": id_karyawan}, {"$set": update_data})
-    
-    # Opsional: Jika nama berubah, update juga username di tabel users? 
-    # Untuk kesederhanaan, kita biarkan username tetap sama meskipun nama diubah.
-    
     return {**existing, **update_data}
 
-
-# 2. GET Daftar Gaji (Join Data)
-# @api_router.get("/gaji", response_model=List[Gaji])
-# async def get_gaji(_: dict = Depends(verify_token)):
-#     # Kita perlu join manual sederhana karena MongoDB bukan Relational DB
-    
-#     # Ambil data gaji
-#     gaji_list = await db.gaji.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    
-#     if not gaji_list:
-#         return []
-
-#     # Optimasi: Ambil data lookup sekali jalan
-#     # List ID Produksi & Karyawan yang dibutuhkan
-#     prod_ids = list(set([g['id_produksi'] for g in gaji_list]))
-#     karyawan_ids = list(set([g['id_karyawan'] for g in gaji_list]))
-
-#     # Query Lookup
-#     produksis = await db.produksi_harian.find({"id": {"$in": prod_ids}}).to_list(1000)
-#     karyawans = await db.karyawan.find({"id": {"$in": karyawan_ids}}).to_list(1000)
-
-#     # Buat Dictionary Map biar cepat aksesnya
-#     prod_map = {p['id']: p['tanggal'] for p in produksis}
-#     karyawan_map = {k['id']: k['nama'] for k in karyawans}
-
-#     # Gabungkan data
-#     hasil = []
-#     for g in gaji_list:
-#         g['nama_karyawan'] = karyawan_map.get(g['id_karyawan'], "Unknown")
-#         g['tanggal_produksi'] = prod_map.get(g['id_produksi'], "Unknown")
-#         hasil.append(Gaji(**g))
-    
-#     # Sort berdasarkan tanggal produksi terbaru
-#     return sorted(hasil, key=lambda x: x.tanggal_produksi, reverse=True)
-
-# # 3. PATCH Bayar Gaji
-# @api_router.patch("/gaji/{id_gaji}/bayar")
-# async def bayar_gaji(id_gaji: str, _: dict = Depends(verify_token)):
-#     # 1. Cari data gaji
-#     gaji_doc = await db.gaji.find_one({"id": id_gaji})
-#     if not gaji_doc:
-#         raise HTTPException(status_code=404, detail="Data gaji tidak ditemukan")
-    
-#     # 2. Cari data karyawan master untuk ambil nominal gaji SAAT INI
-#     karyawan = await db.karyawan.find_one({"id": gaji_doc['id_karyawan']})
-#     if not karyawan:
-#         raise HTTPException(status_code=404, detail="Data karyawan master hilang")
-
-#     nominal_fix = karyawan['gaji_harian']
-
-#     # 3. Update tabel gaji (Simpan nominal fix & set status true)
-#     await db.gaji.update_one(
-#         {"id": id_gaji},
-#         {"$set": {"nominal": nominal_fix, "status_bayar": True}}
-#     )
-
-#     return {"message": "Gaji berhasil dibayarkan", "nominal": nominal_fix}
 
 @api_router.get("/gaji", response_model=List[Gaji])
 async def get_gaji(_: dict = Depends(verify_token)):
