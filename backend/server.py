@@ -61,6 +61,7 @@ class LoginResponse(BaseModel):
 class PenjualanCreate(BaseModel):
     tanggal: date
     pembeli: str
+    tanggal_penjualan: Optional[date] = None
     kategori_pembeli: KategoriPembeli
     tempe_3k_pcs: int = 0
     tempe_5k_pcs: int = 0
@@ -71,6 +72,7 @@ class Penjualan(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
     tanggal: str
+    tanggal_penjualan: Optional[str] = None
     pembeli: str
     kategori_pembeli: str
     tempe_3k_pcs: int
@@ -109,7 +111,7 @@ class ProduksiHarianCreate(BaseModel):
     tempe_3k_produksi: int = 0
     tempe_5k_produksi: int = 0
     tempe_10k_produksi: int = 0
-    jumlah_pekerja: int
+    pekerja: List[str] = []                  
 
 class ProduksiHarian(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -120,8 +122,13 @@ class ProduksiHarian(BaseModel):
     tempe_5k_produksi: int
     tempe_10k_produksi: int
     total_produksi: int
-    jumlah_pekerja: int
-    created_at: str
+    pekerja: str
+    stat_exp: bool = False
+    jumlah_pekerja: int      # Dihitung dari tabel gaji
+    nama_pekerja: List[str]  # Diambil dari tabel gaji -> karyawan
+
+class StatusExpUpdate(BaseModel):
+    stat_exp: bool
 
 class StokSummary(BaseModel):
     stok_3k: int
@@ -166,6 +173,56 @@ class LaporanLabaItem(BaseModel):
     pengeluaran: int
     laba: int
 
+class KaryawanCreate(BaseModel):
+    nama: str
+    nomor: str
+    gaji_harian: int # Gaji per hari
+    status_aktif: bool = True
+
+class KaryawanUpdate(BaseModel):
+    nama: str
+    nomor: str
+    gaji_harian: int
+    status_aktif: bool
+
+class Karyawan(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    id_user: str # Relasi ke tabel users
+    nama: str
+    nomor: str
+    gaji_harian: int
+    status_aktif: bool
+    created_at: str
+
+# class Gaji(BaseModel):
+#     model_config = ConfigDict(extra="ignore")
+#     id: str
+#     id_produksi: str
+#     id_karyawan: str
+#     nama_karyawan: str = "" # Helper field untuk frontend
+#     tanggal_produksi: str = "" # Helper field untuk frontend
+#     nominal: int # 0 berarti belum dibayar
+#     status_bayar: bool # False = Belum, True = Sudah
+#     created_at: str
+
+class Gaji(BaseModel):
+    id: str
+    id_produksi: str
+    id_karyawan: str
+    nama_karyawan: str = "Unknown"
+    tanggal_produksi: str = "Unknown"
+    nominal: int = 0
+    nominal_standar: int = 0  # <--- Field baru untuk tampilan awal
+    status_bayar: bool = False
+    created_at: str
+
+
+class BayarBatchRequest(BaseModel):
+    ids: List[str]          # List ID gaji yang mau dibayar
+    total_nominal: int      # Total uang yang dikeluarkan
+    nama_karyawan: str      # Nama karyawan (untuk keterangan)
+    
 # Helper functions
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
@@ -185,7 +242,229 @@ async def init_admin():
             "password": hashed.decode('utf-8')
         })
 
+# from pydantic import BaseModel
+from typing import List
+import uuid
+from datetime import datetime
 # Routes
+# 2. Buat Endpoint Baru
+@api_router.post("/gaji/bayar-batch")
+async def bayar_gaji_batch(payload: BayarBatchRequest, user: dict = Depends(verify_token)):
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="Tidak ada data gaji yang dipilih")
+
+    # A. Update Status Gaji Karyawan (Menjadi Lunas/Paid)
+    await db.gaji.update_many(
+        {"id": {"$in": payload.ids}},
+        {"$set": {"status_bayar": True}}
+    )
+
+    # B. OTOMATIS CATAT KE PENGELUARAN
+    # Pastikan Anda sudah punya collection 'pengeluaran' di DB
+    pengeluaran_doc = {
+        "id": str(uuid.uuid4()),
+        "tanggal": datetime.now().isoformat(), # Tanggal hari ini
+        "kategori_pengeluaran": "gaji",        # Kategori otomatis 'gaji'
+        "jumlah": payload.total_nominal,       # Nominal dari frontend
+        "keterangan": f"Gaji a.n {payload.nama_karyawan} ({len(payload.ids)} hari kerja)",
+        "created_at": datetime.now().isoformat(),
+        "user_id": user.get("id") # Opsional: siapa yang input
+    }
+    
+    await db.pengeluaran.insert_one(pengeluaran_doc)
+
+    return {"message": "Pembayaran berhasil dan tercatat di pengeluaran"}
+
+@api_router.post("/karyawan", response_model=Karyawan)
+async def create_karyawan(data: KaryawanCreate, _: dict = Depends(verify_token)):
+    import uuid
+    
+    # 1. Buat User Baru (Username = Nama, Password = 12345678)
+    # Sanitasi username (hapus spasi, lowercase) agar aman
+    username = data.nama.lower().replace(" ", "")
+    hashed_password = bcrypt.hashpw("12345678".encode('utf-8'), bcrypt.gensalt())
+    
+    # Cek username ganda
+    existing_user = await db.users.find_one({"username": username})
+    if existing_user:
+        raise HTTPException(status_code=400, detail=f"Username '{username}' sudah digunakan. Gunakan nama lain.")
+
+    user_id = await db.users.insert_one({
+        "username": username,
+        "password": hashed_password.decode('utf-8'),
+        "role": "karyawan" # Opsional: jika ingin membedakan role
+    })
+
+    # 2. Buat Data Karyawan
+    karyawan_doc = {
+        "id": str(uuid.uuid4()),
+        "id_user": str(user_id.inserted_id),
+        "nama": data.nama,
+        "nomor": data.nomor,
+        "gaji_harian": data.gaji_harian,
+        "status_aktif": data.status_aktif,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.karyawan.insert_one(karyawan_doc)
+    return Karyawan(**karyawan_doc)
+
+@api_router.get("/karyawan", response_model=List[Karyawan])
+async def get_karyawan(_: dict = Depends(verify_token)):
+    karyawan_list = await db.karyawan.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return [Karyawan(**k) for k in karyawan_list]
+
+@api_router.put("/karyawan/{id_karyawan}", response_model=Karyawan)
+async def update_karyawan(id_karyawan: str, data: KaryawanUpdate, _: dict = Depends(verify_token)):
+    # Cek exist
+    existing = await db.karyawan.find_one({"id": id_karyawan})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Karyawan tidak ditemukan")
+    
+    update_data = {
+        "nama": data.nama,
+        "nomor": data.nomor,
+        "gaji_harian": data.gaji_harian,
+        "status_aktif": data.status_aktif
+    }
+    
+    await db.karyawan.update_one({"id": id_karyawan}, {"$set": update_data})
+    
+    # Opsional: Jika nama berubah, update juga username di tabel users? 
+    # Untuk kesederhanaan, kita biarkan username tetap sama meskipun nama diubah.
+    
+    return {**existing, **update_data}
+
+
+# 2. GET Daftar Gaji (Join Data)
+# @api_router.get("/gaji", response_model=List[Gaji])
+# async def get_gaji(_: dict = Depends(verify_token)):
+#     # Kita perlu join manual sederhana karena MongoDB bukan Relational DB
+    
+#     # Ambil data gaji
+#     gaji_list = await db.gaji.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+#     if not gaji_list:
+#         return []
+
+#     # Optimasi: Ambil data lookup sekali jalan
+#     # List ID Produksi & Karyawan yang dibutuhkan
+#     prod_ids = list(set([g['id_produksi'] for g in gaji_list]))
+#     karyawan_ids = list(set([g['id_karyawan'] for g in gaji_list]))
+
+#     # Query Lookup
+#     produksis = await db.produksi_harian.find({"id": {"$in": prod_ids}}).to_list(1000)
+#     karyawans = await db.karyawan.find({"id": {"$in": karyawan_ids}}).to_list(1000)
+
+#     # Buat Dictionary Map biar cepat aksesnya
+#     prod_map = {p['id']: p['tanggal'] for p in produksis}
+#     karyawan_map = {k['id']: k['nama'] for k in karyawans}
+
+#     # Gabungkan data
+#     hasil = []
+#     for g in gaji_list:
+#         g['nama_karyawan'] = karyawan_map.get(g['id_karyawan'], "Unknown")
+#         g['tanggal_produksi'] = prod_map.get(g['id_produksi'], "Unknown")
+#         hasil.append(Gaji(**g))
+    
+#     # Sort berdasarkan tanggal produksi terbaru
+#     return sorted(hasil, key=lambda x: x.tanggal_produksi, reverse=True)
+
+# # 3. PATCH Bayar Gaji
+# @api_router.patch("/gaji/{id_gaji}/bayar")
+# async def bayar_gaji(id_gaji: str, _: dict = Depends(verify_token)):
+#     # 1. Cari data gaji
+#     gaji_doc = await db.gaji.find_one({"id": id_gaji})
+#     if not gaji_doc:
+#         raise HTTPException(status_code=404, detail="Data gaji tidak ditemukan")
+    
+#     # 2. Cari data karyawan master untuk ambil nominal gaji SAAT INI
+#     karyawan = await db.karyawan.find_one({"id": gaji_doc['id_karyawan']})
+#     if not karyawan:
+#         raise HTTPException(status_code=404, detail="Data karyawan master hilang")
+
+#     nominal_fix = karyawan['gaji_harian']
+
+#     # 3. Update tabel gaji (Simpan nominal fix & set status true)
+#     await db.gaji.update_one(
+#         {"id": id_gaji},
+#         {"$set": {"nominal": nominal_fix, "status_bayar": True}}
+#     )
+
+#     return {"message": "Gaji berhasil dibayarkan", "nominal": nominal_fix}
+
+@api_router.get("/gaji", response_model=List[Gaji])
+async def get_gaji(_: dict = Depends(verify_token)):
+    # 1. Ambil data gaji
+    gaji_list = await db.gaji.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    if not gaji_list:
+        return []
+
+    # 2. Siapkan ID untuk Lookup
+    prod_ids = list(set([g['id_produksi'] for g in gaji_list]))
+    karyawan_ids = list(set([g['id_karyawan'] for g in gaji_list]))
+
+    # 3. Lookup Data
+    produksis = await db.produksi_harian.find({"id": {"$in": prod_ids}}).to_list(1000)
+    karyawans = await db.karyawan.find({"id": {"$in": karyawan_ids}}).to_list(1000)
+
+    prod_map = {p['id']: p['tanggal'] for p in produksis}
+    
+    # Map Karyawan: Simpan object lengkap untuk ambil gaji_harian
+    karyawan_map = {k['id']: k for k in karyawans} 
+
+    hasil = []
+    for g in gaji_list:
+        # Ambil data karyawan terkait
+        ky = karyawan_map.get(g['id_karyawan'])
+        
+        g['nama_karyawan'] = ky['nama'] if ky else "Unknown"
+        g['tanggal_produksi'] = prod_map.get(g['id_produksi'], "Unknown")
+        
+        # LOGIKA TAMPILAN:
+        # Kirimkan gaji_harian master sebagai 'nominal_standar' agar bisa tampil di FE
+        g['nominal_standar'] = ky['gaji_harian'] if ky else 0
+        
+        hasil.append(Gaji(**g))
+    
+    return sorted(hasil, key=lambda x: x.tanggal_produksi, reverse=True)
+
+
+# ENDPOINT BARU: VERIFIKASI (Tombol Selesai di Tabel)
+# Gunanya: Mengunci nominal ke DB dan memasukkannya ke antrian Card Akumulasi
+@api_router.patch("/gaji/{id_gaji}/verifikasi")
+async def verifikasi_gaji(id_gaji: str, _: dict = Depends(verify_token)):
+    # Cari Gaji
+    gaji_doc = await db.gaji.find_one({"id": id_gaji})
+    if not gaji_doc:
+        raise HTTPException(status_code=404, detail="Data tidak ditemukan")
+
+    # Cari Master Karyawan untuk kunci nominal
+    karyawan = await db.karyawan.find_one({"id": gaji_doc['id_karyawan']})
+    if not karyawan:
+        raise HTTPException(status_code=404, detail="Master karyawan tidak ditemukan")
+
+    nominal_fix = karyawan['gaji_harian']
+
+    # Update: Isi nominal (artinya sudah diverifikasi), tapi status_bayar TETAP FALSE
+    await db.gaji.update_one(
+        {"id": id_gaji},
+        {"$set": {"nominal": nominal_fix}}
+    )
+    return {"message": "Gaji diverifikasi", "nominal": nominal_fix}
+
+
+# ENDPOINT UPDATE: BAYAR (Tombol Bayar di Card)
+# Gunanya: Melunasi gaji yang sudah diverifikasi
+@api_router.patch("/gaji/{id_gaji}/bayar")
+async def bayar_gaji(id_gaji: str, _: dict = Depends(verify_token)):
+    # Set status_bayar jadi True
+    await db.gaji.update_one(
+        {"id": id_gaji},
+        {"$set": {"status_bayar": True}}
+    )
+    return {"message": "Gaji lunas"}
+
 @api_router.post("/auth/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
     user = await db.users.find_one({"username": request.username}, {"_id": 0})
@@ -268,11 +547,15 @@ async def create_penjualan(data: PenjualanCreate, _: dict = Depends(verify_token
     
     total_penjualan = subtotal_3k + subtotal_5k + subtotal_10k
     # ---------------------------------------------
+    print("===============================================================================")
+    print("===============================================================================")
+    print(data)
     
     import uuid
     doc = {
         "id": str(uuid.uuid4()),
         "tanggal": data.tanggal.isoformat(),
+        "tanggal_penjualan": data.tanggal_penjualan.isoformat() if data.tanggal_penjualan else None,
         "pembeli": data.pembeli,
         "kategori_pembeli": data.kategori_pembeli.value,
         "tempe_3k_pcs": data.tempe_3k_pcs,
@@ -373,34 +656,265 @@ async def get_return(_: dict = Depends(verify_token)):
     return_list = await db.return_penjualan.find({}, {"_id": 0}).sort("tanggal", -1).to_list(1000)
     return [ReturnPenjualan(**r) for r in return_list]
 
-@api_router.post("/produksi", response_model=ProduksiHarian)
+# --- [UPDATE MODEL] ---
+
+# Model untuk INPUT (Create)
+class ProduksiHarianCreate(BaseModel):
+    tanggal: date
+    kedelai_kg: float
+    tempe_3k_produksi: int = 0
+    tempe_5k_produksi: int = 0
+    tempe_10k_produksi: int = 0
+    pekerja: List[str] = [] # Array ID Karyawan (hanya untuk trigger buat gaji)
+
+# Model untuk OUTPUT (Read/Response)
+class ProduksiHarianResponse(BaseModel):
+    id: str
+    tanggal: str
+    kedelai_kg: float
+    tempe_3k_produksi: int
+    tempe_5k_produksi: int
+    tempe_10k_produksi: int
+    total_produksi: int
+    stat_exp: bool
+    # Field tambahan (Computed Fields)
+    jumlah_pekerja: int      # Dihitung dari tabel gaji
+    nama_pekerja: List[str]  # Diambil dari tabel gaji -> karyawan
+    paid_karyawan_ids: List[str] = []
+    created_at: str
+
+# --- [UPDATE ENDPOINT POST] ---
+@api_router.post("/produksi", response_model=ProduksiHarianResponse)
 async def create_produksi(data: ProduksiHarianCreate, _: dict = Depends(verify_token)):
+    # 1. Validasi Tanggal
+    cek_tanggal = await db.produksi_harian.find_one({"tanggal": data.tanggal.isoformat()})
+    if cek_tanggal:
+        raise HTTPException(status_code=400, detail=f"Data produksi tanggal {data.tanggal} sudah ada!")
+
+    import uuid
+    prod_id = str(uuid.uuid4())
+    
+    # 2. Simpan Produksi (TANPA DATA PEKERJA SAMA SEKALI)
+    doc_prod = {
+        "id": prod_id,
+        "tanggal": data.tanggal.isoformat(),
+        "kedelai_kg": data.kedelai_kg,
+        "tempe_3k_produksi": data.tempe_3k_produksi,
+        "tempe_5k_produksi": data.tempe_5k_produksi,
+        "tempe_10k_produksi": data.tempe_10k_produksi,
+        "total_produksi": (data.tempe_3k_produksi + data.tempe_5k_produksi + data.tempe_10k_produksi),
+        "stat_exp": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+        # Field 'jumlah_pekerja' dan 'pekerja' TIDAK DISIMPAN DISINI
+    }
+    await db.produksi_harian.insert_one(doc_prod)
+
+    # 3. Simpan Gaji (Relasi: id_produksi -> id_karyawan)
+    docs_gaji = []
+    nama_pekerja_list = [] # Hanya untuk response balik sesaat
+    
+    if data.pekerja:
+        # Ambil nama karyawan untuk response balik (opsional)
+        karyawans = await db.karyawan.find({"id": {"$in": data.pekerja}}).to_list(1000)
+        nama_map = {k['id']: k['nama'] for k in karyawans}
+
+        for id_karyawan in data.pekerja:
+            docs_gaji.append({
+                "id": str(uuid.uuid4()),
+                "id_produksi": prod_id,
+                "id_karyawan": id_karyawan,
+                "nominal": 0, 
+                "status_bayar": False,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            if id_karyawan in nama_map:
+                nama_pekerja_list.append(nama_map[id_karyawan])
+    
+        await db.gaji.insert_many(docs_gaji)
+    
+    # Return data (gabungkan data db + data barusan untuk response)
+    return {
+        **doc_prod, 
+        "jumlah_pekerja": len(docs_gaji),
+        "nama_pekerja": nama_pekerja_list
+    }
+
+# --- [UPDATE ENDPOINT GET - INI YANG PALING PENTING] ---
+@api_router.get("/produksi", response_model=List[ProduksiHarianResponse])
+async def get_produksi(_: dict = Depends(verify_token)):
+    # 1. Ambil Semua Data Produksi
+    produksi_list = await db.produksi_harian.find({}, {"_id": 0}).sort("tanggal", -1).to_list(1000)
+    if not produksi_list: return []
+
+    prod_ids = [p['id'] for p in produksi_list]
+
+    # 2. Ambil Data Gaji
+    gaji_list = await db.gaji.find({"id_produksi": {"$in": prod_ids}}).to_list(2000)
+    
+    karyawan_ids = list(set([g['id_karyawan'] for g in gaji_list]))
+    karyawan_list = await db.karyawan.find({"id": {"$in": karyawan_ids}}).to_list(1000)
+    
+    karyawan_map = {k['id']: k['nama'] for k in karyawan_list}
+    
+    # Map Helper
+    prod_worker_map = {} 
+    prod_paid_map = {} # <--- Map baru untuk menyimpan siapa yang sudah lunas
+    
+    for g in gaji_list:
+        pid = g['id_produksi']
+        kid = g['id_karyawan']
+        nama = karyawan_map.get(kid, "Unknown")
+        
+        # Logic Nama
+        if pid not in prod_worker_map: prod_worker_map[pid] = []
+        prod_worker_map[pid].append(nama)
+
+        # Logic Paid Status (Cek jika status_bayar == True)
+        if g.get('status_bayar', False):
+            if pid not in prod_paid_map: prod_paid_map[pid] = []
+            prod_paid_map[pid].append(kid) # Simpan ID Karyawan
+
+    # 3. Gabungkan Data Akhir
+    final_result = []
+    for p in produksi_list:
+        workers = prod_worker_map.get(p['id'], [])
+        paid_ids = prod_paid_map.get(p['id'], []) # Ambil list ID yang sudah dibayar
+        
+        p['jumlah_pekerja'] = len(workers)
+        p['nama_pekerja'] = workers
+        p['paid_karyawan_ids'] = paid_ids # Inject ke response
+        
+        final_result.append(p)
+
+    return final_result
+
+@api_router.put("/produksi/{id_produksi}", response_model=ProduksiHarianResponse)
+async def update_produksi(id_produksi: str, data: ProduksiHarianCreate, _: dict = Depends(verify_token)):
+    # 1. Cek keberadaan data produksi
+    existing_doc = await db.produksi_harian.find_one({"id": id_produksi})
+    if not existing_doc:
+        raise HTTPException(status_code=404, detail="Data produksi tidak ditemukan")
+
+    # 2. Update Data Fisik Produksi (Tanpa field pekerja)
     total_produksi = data.tempe_3k_produksi + data.tempe_5k_produksi + data.tempe_10k_produksi
     
-    import uuid
-    doc = {
-        "id": str(uuid.uuid4()),
+    update_data = {
         "tanggal": data.tanggal.isoformat(),
         "kedelai_kg": data.kedelai_kg,
         "tempe_3k_produksi": data.tempe_3k_produksi,
         "tempe_5k_produksi": data.tempe_5k_produksi,
         "tempe_10k_produksi": data.tempe_10k_produksi,
         "total_produksi": total_produksi,
-        "jumlah_pekerja": data.jumlah_pekerja,
-        "created_at": datetime.now(timezone.utc).isoformat()
+        # Field 'pekerja' dan 'jumlah_pekerja' TIDAK diupdate disini secara langsung
     }
-    await db.produksi_harian.insert_one(doc)
-    return ProduksiHarian(**doc)
 
-@api_router.get("/produksi", response_model=List[ProduksiHarian])
-async def get_produksi(_: dict = Depends(verify_token)):
-    produksi_list = await db.produksi_harian.find({}, {"_id": 0}).sort("tanggal", -1).to_list(1000)
-    return [ProduksiHarian(**p) for p in produksi_list]
+    await db.produksi_harian.update_one(
+        {"id": id_produksi},
+        {"$set": update_data}
+    )
 
-@api_router.get("/stok", response_model=StokSummary)
+    # --- 3. LOGIKA SINKRONISASI PEKERJA (TABEL GAJI) ---
+    
+    # A. Ambil daftar gaji/pekerja yang sudah ada di DB untuk produksi ini
+    existing_gaji_list = await db.gaji.find({"id_produksi": id_produksi}).to_list(1000)
+    
+    # Map: ID_Karyawan -> Data Gaji Lengkap
+    existing_map = {g['id_karyawan']: g for g in existing_gaji_list}
+    existing_ids = set(existing_map.keys())
+    
+    # B. Ambil daftar ID pekerja baru dari Form Frontend
+    new_ids = set(data.pekerja)
+
+    # C. Tentukan mana yang harus DITAMBAH (Insert)
+    ids_to_add = new_ids - existing_ids
+    
+    # D. Tentukan mana yang harus DIHAPUS (Delete)
+    ids_to_remove = existing_ids - new_ids
+
+    import uuid
+
+    # E. Eksekusi HAPUS (Hanya jika BELUM DIBAYAR)
+    for kid in ids_to_remove:
+        gaji_record = existing_map[kid]
+        if gaji_record.get('status_bayar') == True:
+            # Jika sudah dibayar, SKIP (Jangan dihapus walau user uncheck)
+            continue 
+        else:
+            # Jika belum dibayar, boleh dihapus
+            await db.gaji.delete_one({"id": gaji_record['id']})
+
+    # F. Eksekusi TAMBAH
+    if ids_to_add:
+        docs_to_insert = []
+        for kid in ids_to_add:
+            docs_to_insert.append({
+                "id": str(uuid.uuid4()),
+                "id_produksi": id_produksi,
+                "id_karyawan": kid,
+                "nominal": 0,
+                "status_bayar": False,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+        if docs_to_insert:
+            await db.gaji.insert_many(docs_to_insert)
+
+    # --- 4. PERSIAPAN DATA RESPONSE ---
+    
+    # Ambil ulang data gaji terbaru setelah update untuk menghitung jumlah & nama
+    final_gaji_list = await db.gaji.find({"id_produksi": id_produksi}).to_list(1000)
+    
+    # Ambil nama karyawan
+    final_karyawan_ids = [g['id_karyawan'] for g in final_gaji_list]
+    karyawan_data = await db.karyawan.find({"id": {"$in": final_karyawan_ids}}).to_list(1000)
+    nama_map = {k['id']: k['nama'] for k in karyawan_data}
+    
+    nama_pekerja_list = [nama_map.get(kid, "Unknown") for kid in final_karyawan_ids]
+    paid_ids = [g['id_karyawan'] for g in final_gaji_list if g.get('status_bayar')]
+
+    # Gabungkan data untuk dikirim balik ke Frontend
+    response_data = {
+        **existing_doc,     # Data lama (ID, created_at)
+        **update_data,      # Data baru (tempe, kedelai)
+        "jumlah_pekerja": len(final_gaji_list),
+        "nama_pekerja": nama_pekerja_list,
+        "paid_karyawan_ids": paid_ids
+    }
+
+    return response_data
+
+@api_router.patch("/produksi/{id_produksi}/update-exp")
+async def update_status_exp(id_produksi: str, data: StatusExpUpdate, _: dict = Depends(verify_token)):
+    # Update field stat_exp saja berdasarkan ID
+    result = await db.produksi_harian.update_one(
+        {"id": id_produksi},
+        {"$set": {"stat_exp": data.stat_exp}}
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Data produksi tidak ditemukan")
+
+    return {"message": "Status expired berhasil diupdate", "id": id_produksi, "new_status": data.stat_exp}
+
+
+@api_router.get("/stok/mon", response_model=StokSummary)
 async def get_current_stok(_: dict = Depends(verify_token)):
-    # --- 1. Hitung Total Produksi ---
+    # --- LANGKAH 1: Cari Daftar Tanggal yang Expired ---
+    # Kita perlu tahu tanggal mana saja yang stat_exp = True
+    expired_docs = await db.produksi_harian.find(
+        {"stat_exp": True}, 
+        {"tanggal": 1, "_id": 0}
+    ).to_list(10000)
+    
+    # Buat list tanggal yang harus diabaikan (Blacklist Dates)
+    excluded_dates = [doc['tanggal'] for doc in expired_docs]
+
+    # Buat Stage Matcher umum (Gunakan $nin / Not In)
+    # Artinya: Ambil data yang tanggalnya TIDAK ADA di dalam list excluded_dates
+    common_filter = {"$match": {"tanggal": {"$nin": excluded_dates}}}
+
+    # --- LANGKAH 2: Hitung Total Produksi ---
     pipeline_prod = [
+        common_filter, # Filter tanggal expired
         {"$group": {
             "_id": None,
             "total_3k": {"$sum": "$tempe_3k_produksi"},
@@ -408,12 +922,12 @@ async def get_current_stok(_: dict = Depends(verify_token)):
             "total_10k": {"$sum": "$tempe_10k_produksi"}
         }}
     ]
-    # Jalankan agregasi, gunakan to_list(1) karena hasilnya pasti cuma 1 dokumen summary
     prod_res = await db.produksi_harian.aggregate(pipeline_prod).to_list(1)
     prod = prod_res[0] if prod_res else {"total_3k": 0, "total_5k": 0, "total_10k": 0}
 
-    # --- 2. Hitung Total Penjualan ---
+    # --- LANGKAH 3: Hitung Total Penjualan ---
     pipeline_jual = [
+        common_filter, # Filter tanggal expired (Penjualan di hari basi tidak dihitung)
         {"$group": {
             "_id": None,
             "total_3k": {"$sum": "$tempe_3k_pcs"},
@@ -424,8 +938,9 @@ async def get_current_stok(_: dict = Depends(verify_token)):
     jual_res = await db.penjualan.aggregate(pipeline_jual).to_list(1)
     jual = jual_res[0] if jual_res else {"total_3k": 0, "total_5k": 0, "total_10k": 0}
 
-    # --- 3. Hitung Total Return (Barang masuk lagi ke stok) ---
+    # --- LANGKAH 4: Hitung Total Return ---
     pipeline_ret = [
+        common_filter, # Filter tanggal expired (Return di hari basi tidak dihitung)
         {"$group": {
             "_id": None,
             "total_3k": {"$sum": "$tempe_3k_return"},
@@ -436,14 +951,10 @@ async def get_current_stok(_: dict = Depends(verify_token)):
     ret_res = await db.return_penjualan.aggregate(pipeline_ret).to_list(1)
     ret = ret_res[0] if ret_res else {"total_3k": 0, "total_5k": 0, "total_10k": 0}
 
-    # --- 4. Kalkulasi Akhir ---
-    # Stok = Produksi - Penjualan + Return
+    # --- LANGKAH 5: Kalkulasi Akhir ---
     stok_3k = prod["total_3k"] - jual["total_3k"] + ret["total_3k"]
     stok_5k = prod["total_5k"] - jual["total_5k"] + ret["total_5k"]
     stok_10k = prod["total_10k"] - jual["total_10k"] + ret["total_10k"]
-
-    # Pastikan stok tidak minus (opsional, untuk safety display)
-    # stok_3k = max(0, stok_3k) 
 
     return StokSummary(
         stok_3k=stok_3k,
@@ -543,6 +1054,85 @@ async def get_stok(_: dict = Depends(verify_token)):
     # Get the most recent produksi data
     stok_list = await db.produksi_harian.find({}, {"_id": 0}).sort("tanggal", -1).to_list(1)
     return [ProduksiHarian(**p) for p in stok_list]
+
+@api_router.get("/stok/produk")
+async def get_riwayat_stok(_: dict = Depends(verify_token)):
+    # 1. Ambil semua data dan kelompokkan by Tanggal (YYYY-MM-DD)
+    # Kita menggunakan dictionary untuk menggabungkan data dari 3 koleksi
+    daily_map = {}
+
+    # Helper untuk inisialisasi tanggal di map
+    def init_date(date_str):
+        if date_str not in daily_map:
+            daily_map[date_str] = {
+                "prod_3k": 0, "prod_5k": 0, "prod_10k": 0,
+                "jual_3k": 0, "jual_5k": 0, "jual_10k": 0,
+                "ret_3k": 0,  "ret_5k": 0,  "ret_10k": 0,
+                "rsk_3k": 0,  "rsk_5k": 0,  "rsk_10k": 0,
+                "stat_exp": False
+            }
+
+    # --- A. Ambil Data Produksi ---
+    async for doc in db.produksi_harian.find({}, {"_id": 0}):
+        date_key = doc["tanggal"][:10] # Ambil YYYY-MM-DD
+        init_date(date_key)
+        daily_map[date_key]["prod_3k"] += doc["tempe_3k_produksi"]
+        daily_map[date_key]["prod_5k"] += doc["tempe_5k_produksi"]
+        daily_map[date_key]["prod_10k"] += doc["tempe_10k_produksi"]
+        is_exp = doc.get("stat_exp", False)
+        if is_exp:
+            daily_map[date_key]["stat_exp"] = True
+
+    # --- B. Ambil Data Penjualan ---
+    async for doc in db.penjualan.find({}, {"_id": 0}):
+        date_key = doc["tanggal"][:10]
+        init_date(date_key)
+        daily_map[date_key]["jual_3k"] += doc["tempe_3k_pcs"]
+        daily_map[date_key]["jual_5k"] += doc["tempe_5k_pcs"]
+        daily_map[date_key]["jual_10k"] += doc["tempe_10k_pcs"]
+
+    # --- C. Ambil Data Return ---
+    async for doc in db.return_penjualan.find({}, {"_id": 0}):
+        date_key = doc["tanggal"][:10]
+        init_date(date_key)
+        daily_map[date_key]["ret_3k"] += doc["tempe_3k_return"]
+        daily_map[date_key]["ret_5k"] += doc["tempe_5k_return"]
+        daily_map[date_key]["ret_10k"] += doc["tempe_10k_return"]
+        # daily_map[date_key]["rsk_3k"] += doc["tempe_3k_rusak"]
+        # daily_map[date_key]["rsk_5k"] += doc["tempe_5k_rusak"]
+        # daily_map[date_key]["rsk_10k"] += doc["tempe_10k_rusak"]
+
+    # 2. Kalkulasi Running Balance (Saldo Berjalan)
+    # Urutkan tanggal dari terlama ke terbaru
+    sorted_dates = sorted(daily_map.keys())
+
+    riwayat_list = []
+    
+    for date in sorted_dates:
+        d = daily_map[date]
+        
+        riwayat_list.append({
+            "tanggal": date,
+            "stat_exp": d["stat_exp"],
+            "prod_stok_3k":  d["prod_3k"],
+            "prod_stok_5k": d["prod_5k"],
+            "prod_stok_10k": d["prod_10k"],
+            "sell_stok_3k": d["jual_3k"],
+            "sell_stok_5k": d["jual_5k"],
+            "sell_stok_10k": d["jual_10k"],
+            "res_stok_3k":  d["ret_3k"],
+            "res_stok_5k": d["ret_5k"],
+            "res_stok_10k": d["ret_10k"],
+            "rsk_stok_3k":  d["rsk_3k"],
+            "rsk_stok_5k": d["rsk_5k"],
+            "rsk_stok_10k": d["rsk_10k"],
+            "sisa_stok_3k":  d["prod_3k"] +  d["ret_3k"] - d["jual_3k"] - d["rsk_3k"],
+            "sisa_stok_5k": d["prod_5k"] +  d["ret_5k"] - d["jual_5k"] - d["rsk_5k"],
+            "sisa_stok_10k": d["prod_10k"] +  d["ret_10k"] - d["jual_10k"] - d["rsk_10k"]
+        })
+
+    # 3. Return data (dibalik agar tanggal terbaru di atas)
+    return list(reversed(riwayat_list))
 
 @api_router.post("/pengeluaran", response_model=Pengeluaran)
 async def create_pengeluaran(data: PengeluaranCreate, _: dict = Depends(verify_token)):
