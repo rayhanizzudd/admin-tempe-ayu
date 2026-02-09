@@ -255,7 +255,7 @@ export default function ReturnPage() {
                   <TableHead className="text-right">5k (pcs)</TableHead>
                   <TableHead className="text-right">10k (pcs)</TableHead>
                   <TableHead className="text-right">Total Return</TableHead>
-                  <TableHead>Keterangan</TableHead>
+                  <TableHead className="text-right">Keterangan</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -270,15 +270,27 @@ export default function ReturnPage() {
                     const penjualanInfo = getPenjualanInfo(item.penjualan_id);
                     return (
                       <TableRow key={item.id}>
-                        <TableCell>{new Date(item.tanggal).toLocaleDateString('id-ID')}</TableCell>
-                        <TableCell className="font-medium">{penjualanInfo?.pembeli || '-'}</TableCell>
-                        <TableCell className="text-right">{item.tempe_3k_return}</TableCell>
-                        <TableCell className="text-right">{item.tempe_5k_return}</TableCell>
-                        <TableCell className="text-right">{item.tempe_10k_return}</TableCell>
+                        <TableCell>
+                          {new Date(item.tanggal).toLocaleDateString("id-ID")}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {penjualanInfo?.pembeli || "-"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {item.tempe_3k_return}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {item.tempe_5k_return}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {item.tempe_10k_return}
+                        </TableCell>
                         <TableCell className="text-right font-semibold text-red-600">
                           {formatRupiah(item.total_return)}
                         </TableCell>
-                        <TableCell className="max-w-xs truncate">{item.keterangan || '-'}</TableCell>
+                        <TableCell className="text-right max-w-xs truncate">
+                          {item.keterangan || "-"}
+                        </TableCell>
                       </TableRow>
                     );
                   })
