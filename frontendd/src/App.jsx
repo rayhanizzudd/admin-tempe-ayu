@@ -9,7 +9,10 @@ import Produksi from "@/pages/Produksi";
 import Pengeluaran from "@/pages/Pengeluaran";
 import LaporanLaba from "@/pages/LaporanLaba";
 import Stok from "@/pages/Stok";
+import Karyawan from "@/pages/Karyawan";
+import Gaji from "@/pages/GajiKaryawan";
 import Layout from "@/components/Layout";
+import { Toaster } from "@/components/ui/sonner";
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -87,7 +90,7 @@ function App() {
             element={
               <ProtectedRoute>
                 <Layout>
-                  <Stok/>
+                  <Stok />
                 </Layout>
               </ProtectedRoute>
             }
@@ -112,8 +115,29 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/karyawan"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Karyawan />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/gaji"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Gaji />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
         </Routes>
       </BrowserRouter>
+      <Toaster position="top-center" richColors />
     </div>
   );
 }
